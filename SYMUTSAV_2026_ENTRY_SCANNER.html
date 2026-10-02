@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SYMUTSAV 2026 — Entry Scanner</title>
+<style>
+body{font-family:Arial,sans-serif;margin:0;background:#f5f7fa;color:#17202a}
+.wrap{max-width:520px;margin:0 auto;padding:20px}
+.card{background:#fff;border-radius:18px;padding:22px;box-shadow:0 4px 20px rgba(0,0,0,.10)}
+h1{font-size:25px;margin:0 0 6px}
+.sub{color:#667085;margin-bottom:18px}
+#reader{width:100%;min-height:280px;border:2px dashed #b8c0cc;border-radius:14px;overflow:hidden}
+button{width:100%;padding:14px;margin-top:14px;border:0;border-radius:12px;font-size:17px;font-weight:700;cursor:pointer}
+#start{background:#17202a;color:white}
+#stop{background:#e9edf2;color:#17202a}
+#result{margin-top:18px;padding:18px;border-radius:14px;display:none;font-size:18px;line-height:1.55}
+.ok{background:#e7f6ec;color:#146c2e}
+.bad{background:#fdeaea;color:#a51d1d}
+.info{background:#eef3f8;color:#344054}
+.small{font-size:13px;color:#667085;margin-top:14px}
+</style>
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>SYMUTSAV 2026</h1>
+    <div class="sub">Official Entry Scanner</div>
+
+    <div id="reader"></div>
+
+    <button id="start" onclick="startScanner()">START SCANNER</button>
+    <button id="stop" onclick="stopScanner()" style="display:none">STOP SCANNER</button>
+
+    <div id="result"></div>
+    <div class="small">
+      Scan only the participant's official ticket QR. A successful scan is recorded centrally.
+    </div>
+  </div>
+</div>
+
+<script>
+const VALIDATOR =
+  'https://script.google.com/macros/s/AKfycbwr9AdE6viVlCHvd6jxnKiKgymsUb19wDKq8aFX7iVnA_W7KlgK-xCLq6Omn6NVqooc/exec';
+
+let scanner = null;
+let busy = false;
+
+function showResult(title, msg, kind){
+  const el=document.getElementById('result');
+  el.className=kind;
+  el.style.display='block';
+  el.innerHTML='<b>'+title+'</b><br>'+msg;
+}
+
+function parseQr(text){
+  text=(text||'').trim();
+
+  // Current QR format: Apps Script URL containing ticket and token.
+  try{
+    const u=new URL(text);
+    const ticket=u.searchParams.get('ticket');
+    const token=u.searchParams.get('token');
+    if(ticket && token) return {ticket,token};
+  }catch(e){}
+
+  // Future compact format: SYMUTSAV|ticket|token
+  const p=text.split('|');
+  if(p.length===3 && p[0]==='SYMUTSAV'){
+    return {ticket:p[1].trim(),token:p[2].trim()};
+  }
+
+  return null;
+}
+
+function validate(ticket, token){
+  // Do not use cross-origin fetch here. Apps Script web apps do not need
+  // to expose a CORS API for this scanner. Navigate directly to the
+  // already-tested validation endpoint.
+  const url=VALIDATOR+'?ticket='+encodeURIComponent(ticket)+'&token='+encodeURIComponent(token);
+  window.location.href=url;
+}
+
+async function onScanSuccess(decodedText){
+  if(busy) return;
+  busy=true;
+  try{
+    const data=parseQr(decodedText);
+    if(!data){
+      showResult('INVALID QR','This is not a SYMUTSAV ticket QR.','bad');
+      busy=false;
+      return;
+    }
+
+    showResult('CHECKING…','Opening the central validation result.','info');
+    validate(data.ticket,data.token);
+  }catch(e){
+    showResult('CONNECTION ERROR','Check the scanner phone internet connection and try again.','bad');
+  }
+
+  setTimeout(()=>busy=false,2500);
+}
+
+function startScanner(){
+  if(scanner) return;
+  scanner=new Html5Qrcode("reader");
+  scanner.start(
+    {facingMode:"environment"},
+    {fps:10,qrbox:{width:250,height:250}},
+    onScanSuccess,
+    ()=>{}
+  ).then(()=>{
+    document.getElementById('start').style.display='none';
+    document.getElementById('stop').style.display='block';
+    showResult('READY','Point the camera at the participant QR.','info');
+  }).catch(err=>{
+    scanner=null;
+    showResult('CAMERA ERROR','Allow camera permission and reopen the scanner page.','bad');
+  });
+}
+
+function stopScanner(){
+  if(!scanner) return;
+  scanner.stop().then(()=>{
+    scanner.clear();
+    scanner=null;
+    document.getElementById('start').style.display='block';
+    document.getElementById('stop').style.display='none';
+  });
+}
+</script>
+</body>
+</html>
